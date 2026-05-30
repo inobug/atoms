@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:atoms.dev)",
+      "WebSearch",
+      "WebFetch(domain:www.uneed.best)",
+      "WebFetch(domain:opentools.ai)",
+      "WebFetch(domain:techround.co.uk)",
+      "WebFetch(domain:www.unite.ai)",
+      "WebFetch(domain:karozieminski.substack.com)",
+      "Bash(npx create-next-app@latest:*)"
+    ]
+  }
+}
