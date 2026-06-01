@@ -28,8 +28,8 @@ export function PreviewPanel({
   const [device, setDevice] = useState<DeviceMode>("desktop");
   const [useFallback, setUseFallback] = useState(false);
   const { sandpack } = useSandpack();
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const sandpackOkRef = useRef(false);
 
   const deviceWidths: Record<DeviceMode, string> = {
     desktop: "100%",
@@ -37,41 +37,33 @@ export function PreviewPanel({
     mobile: "375px",
   };
 
-  // Detect Sandpack timeout → switch to fallback
+  // Effect 1: Track if Sandpack ever successfully connects (independent of timer)
   useEffect(() => {
-    if (!hasGeneratedFiles) return;
-
-    // Sandpack is working — cancel fallback
-    if (sandpack.status === "idle" || sandpack.status === "running") {
+    if (
+      (sandpack.status === "idle" || sandpack.status === "running") &&
+      !sandpack.error
+    ) {
+      sandpackOkRef.current = true;
       setUseFallback(false);
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      return;
     }
-
-    // Explicit timeout from Sandpack
     if (sandpack.status === "timeout") {
       setUseFallback(true);
-      return;
     }
+  }, [sandpack.status, sandpack.error]);
 
-    // Start a timer: if still not ready after FALLBACK_TIMEOUT_MS, use fallback
-    if (!timerRef.current) {
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
+  // Effect 2: Timer-based fallback — NOT affected by status changes
+  useEffect(() => {
+    if (!hasGeneratedFiles) return;
+    sandpackOkRef.current = false;
+
+    const timer = setTimeout(() => {
+      if (!sandpackOkRef.current) {
         setUseFallback(true);
-      }, FALLBACK_TIMEOUT_MS);
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
       }
-    };
-  }, [hasGeneratedFiles, sandpack.status]);
+    }, FALLBACK_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [hasGeneratedFiles]);
 
   // Build fallback HTML
   const fallbackHtml = useMemo(() => {
@@ -92,7 +84,7 @@ export function PreviewPanel({
 
   function handleRetrySandpack() {
     setUseFallback(false);
-    timerRef.current = null;
+    sandpackOkRef.current = false;
     sandpack.runSandpack();
   }
 
