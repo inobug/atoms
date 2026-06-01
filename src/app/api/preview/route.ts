@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { transformSync } from "@babel/core";
+// Import preset directly so Next.js NFT traces it for standalone output
+// @ts-expect-error - no types for preset-react default export
+import presetReact from "@babel/preset-react";
 import type { SandpackFiles } from "@/types";
 
 export const runtime = "nodejs";
@@ -100,7 +103,7 @@ function transpileJsx(code: string, filename: string): string {
   try {
     const result = transformSync(code, {
       filename,
-      presets: [["@babel/preset-react", { runtime: "classic" }]],
+      presets: [[presetReact, { runtime: "classic" }]],
       plugins: [],
       ast: false,
       sourceMaps: false,
