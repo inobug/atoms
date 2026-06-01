@@ -662,7 +662,7 @@ export default function ProjectPage() {
             minHeight: 0,
           }}
           options={{
-            bundlerURL: "https://atoms.kuaisanbu.com/sandpack-bundler/",
+            bundlerURL: "https://atoms.kuaisanbu.com/sandpack-bundler/?v=2",
             bundlerTimeOut: 120000,
             externalResources: [
               "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap",
@@ -680,6 +680,7 @@ export default function ProjectPage() {
             <PreviewPanel
               isGenerating={isGenerating}
               hasGeneratedFiles={hasGeneratedFiles}
+              files={sandpackFiles}
             />
             <AgentPanel
               messages={messages.filter((m) =>

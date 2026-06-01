@@ -1,26 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Monitor, Smartphone, Tablet, RefreshCw } from "lucide-react";
 import {
   SandpackPreview as SandpackPreviewComponent,
   useSandpack,
 } from "@codesandbox/sandpack-react";
+import type { SandpackFiles } from "@/types";
+import { buildFallbackHtml } from "@/lib/fallback-preview";
 
 type DeviceMode = "desktop" | "tablet" | "mobile";
+
+const FALLBACK_TIMEOUT_MS = 10_000;
 
 interface PreviewPanelProps {
   isGenerating: boolean;
   hasGeneratedFiles: boolean;
+  files: SandpackFiles;
 }
 
 export function PreviewPanel({
   isGenerating,
   hasGeneratedFiles,
+  files,
 }: PreviewPanelProps) {
   const [device, setDevice] = useState<DeviceMode>("desktop");
+  const [useFallback, setUseFallback] = useState(false);
   const { sandpack } = useSandpack();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const deviceWidths: Record<DeviceMode, string> = {
     desktop: "100%",
@@ -28,12 +37,65 @@ export function PreviewPanel({
     mobile: "375px",
   };
 
+  // Detect Sandpack timeout → switch to fallback
+  useEffect(() => {
+    if (!hasGeneratedFiles) return;
+
+    // Sandpack is working — cancel fallback
+    if (sandpack.status === "idle" || sandpack.status === "running") {
+      setUseFallback(false);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    // Explicit timeout from Sandpack
+    if (sandpack.status === "timeout") {
+      setUseFallback(true);
+      return;
+    }
+
+    // Start a timer: if still not ready after FALLBACK_TIMEOUT_MS, use fallback
+    if (!timerRef.current) {
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        setUseFallback(true);
+      }, FALLBACK_TIMEOUT_MS);
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [hasGeneratedFiles, sandpack.status]);
+
+  // Build fallback HTML
+  const fallbackHtml = useMemo(() => {
+    if (!useFallback || Object.keys(files).length === 0) return "";
+    return buildFallbackHtml(files);
+  }, [useFallback, files]);
+
   function handleRefresh() {
+    if (useFallback) {
+      // Reload the fallback iframe
+      if (iframeRef.current) {
+        iframeRef.current.srcdoc = fallbackHtml;
+      }
+    } else {
+      sandpack.runSandpack();
+    }
+  }
+
+  function handleRetrySandpack() {
+    setUseFallback(false);
+    timerRef.current = null;
     sandpack.runSandpack();
   }
 
-  // Show preview as soon as files are available, even during generation
-  // Only show placeholder when no files have been generated yet
   const showPreview = hasGeneratedFiles;
 
   return (
@@ -69,6 +131,21 @@ export function PreviewPanel({
         </div>
         {showPreview && (
           <div className="ml-auto flex items-center gap-1">
+            {useFallback && (
+              <>
+                <span className="text-[10px] text-yellow-500 mr-1">
+                  Fallback
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1.5 text-muted-foreground hover:text-foreground"
+                  onClick={handleRetrySandpack}
+                >
+                  Retry Sandpack
+                </Button>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -88,11 +165,21 @@ export function PreviewPanel({
             className="h-full bg-white overflow-hidden transition-all duration-300"
             style={{ width: deviceWidths[device], maxWidth: "100%" }}
           >
-            <SandpackPreviewComponent
-              showOpenInCodeSandbox={false}
-              showRefreshButton={false}
-              style={{ height: "100%", width: "100%" }}
-            />
+            {useFallback ? (
+              <iframe
+                ref={iframeRef}
+                srcDoc={fallbackHtml}
+                className="w-full h-full border-0"
+                sandbox="allow-scripts"
+                title="Preview (fallback)"
+              />
+            ) : (
+              <SandpackPreviewComponent
+                showOpenInCodeSandbox={false}
+                showRefreshButton={false}
+                style={{ height: "100%", width: "100%" }}
+              />
+            )}
           </div>
         ) : (
           <PreviewPlaceholder isGenerating={isGenerating} />
