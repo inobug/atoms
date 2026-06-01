@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Monitor, Smartphone, Tablet, RefreshCw } from "lucide-react";
 import {
@@ -8,7 +8,6 @@ import {
   useSandpack,
 } from "@codesandbox/sandpack-react";
 import type { SandpackFiles } from "@/types";
-import { buildFallbackHtml } from "@/lib/fallback-preview";
 
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
@@ -27,6 +26,8 @@ export function PreviewPanel({
 }: PreviewPanelProps) {
   const [device, setDevice] = useState<DeviceMode>("desktop");
   const [useFallback, setUseFallback] = useState(false);
+  const [fallbackHtml, setFallbackHtml] = useState("");
+  const [fallbackLoading, setFallbackLoading] = useState(false);
   const { sandpack } = useSandpack();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const sandpackOkRef = useRef(false);
@@ -37,7 +38,7 @@ export function PreviewPanel({
     mobile: "375px",
   };
 
-  // Effect 1: Track if Sandpack ever successfully connects (independent of timer)
+  // Track if Sandpack ever successfully connects
   useEffect(() => {
     if (
       (sandpack.status === "idle" || sandpack.status === "running") &&
@@ -51,7 +52,7 @@ export function PreviewPanel({
     }
   }, [sandpack.status, sandpack.error]);
 
-  // Effect 2: Timer-based fallback — NOT affected by status changes
+  // Timer-based fallback — NOT affected by status changes
   useEffect(() => {
     if (!hasGeneratedFiles) return;
     sandpackOkRef.current = false;
@@ -65,18 +66,42 @@ export function PreviewPanel({
     return () => clearTimeout(timer);
   }, [hasGeneratedFiles]);
 
-  // Build fallback HTML
-  const fallbackHtml = useMemo(() => {
-    if (!useFallback || Object.keys(files).length === 0) return "";
-    return buildFallbackHtml(files);
-  }, [useFallback, files]);
+  // Fetch server-compiled HTML when fallback activates
+  const fetchFallbackHtml = useCallback(async () => {
+    if (Object.keys(files).length === 0) return;
+    setFallbackLoading(true);
+    try {
+      const res = await fetch("/api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files }),
+      });
+      if (res.ok) {
+        const html = await res.text();
+        setFallbackHtml(html);
+      } else {
+        setFallbackHtml(
+          '<html><body><p style="padding:20px;color:red;">Preview build failed.</p></body></html>',
+        );
+      }
+    } catch {
+      setFallbackHtml(
+        '<html><body><p style="padding:20px;color:red;">Preview request failed.</p></body></html>',
+      );
+    } finally {
+      setFallbackLoading(false);
+    }
+  }, [files]);
+
+  useEffect(() => {
+    if (useFallback) {
+      fetchFallbackHtml();
+    }
+  }, [useFallback, fetchFallbackHtml]);
 
   function handleRefresh() {
     if (useFallback) {
-      // Reload the fallback iframe
-      if (iframeRef.current) {
-        iframeRef.current.srcdoc = fallbackHtml;
-      }
+      fetchFallbackHtml();
     } else {
       sandpack.runSandpack();
     }
@@ -158,13 +183,19 @@ export function PreviewPanel({
             style={{ width: deviceWidths[device], maxWidth: "100%" }}
           >
             {useFallback ? (
-              <iframe
-                ref={iframeRef}
-                srcDoc={fallbackHtml}
-                className="w-full h-full border-0"
-                sandbox="allow-scripts allow-same-origin"
-                title="Preview (fallback)"
-              />
+              fallbackLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-gray-500">Compiling preview...</p>
+                </div>
+              ) : (
+                <iframe
+                  ref={iframeRef}
+                  srcDoc={fallbackHtml}
+                  className="w-full h-full border-0"
+                  sandbox="allow-scripts allow-same-origin"
+                  title="Preview (fallback)"
+                />
+              )
             ) : (
               <SandpackPreviewComponent
                 showOpenInCodeSandbox={false}
@@ -184,28 +215,21 @@ export function PreviewPanel({
 function PreviewPlaceholder({ isGenerating }: { isGenerating: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center gap-6 select-none">
-      {/* Animated orb */}
       <div className="relative w-32 h-32">
-        {/* Outer ring */}
         <div
           className={`absolute inset-0 rounded-full border border-violet-500/20 ${isGenerating ? "animate-spin" : ""}`}
           style={{ animationDuration: "8s" }}
         />
-        {/* Middle ring */}
         <div
           className={`absolute inset-3 rounded-full border border-blue-500/30 ${isGenerating ? "animate-spin" : ""}`}
           style={{ animationDuration: "6s", animationDirection: "reverse" }}
         />
-        {/* Inner ring */}
         <div
           className={`absolute inset-6 rounded-full border border-cyan-500/20 ${isGenerating ? "animate-spin" : ""}`}
           style={{ animationDuration: "4s" }}
         />
-        {/* Core glow */}
         <div className="absolute inset-9 rounded-full bg-gradient-to-br from-violet-500/30 to-blue-500/30 blur-sm" />
         <div className="absolute inset-10 rounded-full bg-gradient-to-br from-violet-600/50 to-blue-600/50" />
-
-        {/* Orbiting dots */}
         {isGenerating && (
           <>
             <div
@@ -243,8 +267,6 @@ function PreviewPlaceholder({ isGenerating }: { isGenerating: boolean }) {
             />
           </>
         )}
-
-        {/* Pulse effect when generating */}
         {isGenerating && (
           <div
             className="absolute inset-6 rounded-full bg-violet-500/10 animate-ping"
@@ -252,8 +274,6 @@ function PreviewPlaceholder({ isGenerating }: { isGenerating: boolean }) {
           />
         )}
       </div>
-
-      {/* Status text */}
       <div className="text-center space-y-2">
         {isGenerating ? (
           <>
@@ -277,8 +297,6 @@ function PreviewPlaceholder({ isGenerating }: { isGenerating: boolean }) {
           </>
         )}
       </div>
-
-      {/* Animated grid lines */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-[0.03]">
         <div
           className="absolute inset-0"
