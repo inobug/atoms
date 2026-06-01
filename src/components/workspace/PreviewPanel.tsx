@@ -162,7 +162,7 @@ export function PreviewPanel({
                 ref={iframeRef}
                 srcDoc={fallbackHtml}
                 className="w-full h-full border-0"
-                sandbox="allow-scripts"
+                sandbox="allow-scripts allow-same-origin"
                 title="Preview (fallback)"
               />
             ) : (

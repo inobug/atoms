@@ -53,10 +53,10 @@ export function buildFallbackHtml(files: SandpackFiles): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"><\/script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"><\/script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"><\/script>
-${usesTailwind ? '<script crossorigin src="https://cdn.tailwindcss.com"><\\/script>' : ""}
+<script crossorigin src="https://atoms.kuaisanbu.com/libs/react.min.js"><\/script>
+<script crossorigin src="https://atoms.kuaisanbu.com/libs/react-dom.min.js"><\/script>
+<script crossorigin src="https://atoms.kuaisanbu.com/libs/babel.min.js"><\/script>
+${usesTailwind ? '<script crossorigin src="https://atoms.kuaisanbu.com/libs/tailwind.js"><\\/script>' : ""}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ${cssCode}
