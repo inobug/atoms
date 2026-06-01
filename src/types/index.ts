@@ -11,6 +11,8 @@ export interface Project {
   name: string;
   description: string | null;
   current_code: string | null;
+  current_files: SandpackFiles | null;
+  plan: string | null;
   model_provider: "claude" | "openai";
   created_at: string;
   updated_at: string;
@@ -32,6 +34,7 @@ export interface GeneratedFile {
   filename: string;
   content: string;
   language: string | null;
+  generation_id: string | null;
   created_at: string;
 }
 
@@ -41,4 +44,27 @@ export interface AgentMessage {
   role: AgentRole;
   content: string;
   isStreaming?: boolean;
+}
+
+// Multi-file output types
+export interface ParsedFile {
+  path: string;
+  content: string;
+}
+
+export type SandpackFiles = Record<string, { code: string }>;
+
+export interface ReviewerVerdict {
+  verdict: "pass" | "retry";
+  issues: string[];
+}
+
+// Interactive chat options
+export interface ChatOption {
+  id: string;
+  label: string;
+  description?: string;
+  type: "checkbox" | "radio";
+  group: string;
+  defaultChecked?: boolean;
 }

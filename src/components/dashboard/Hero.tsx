@@ -84,7 +84,7 @@ export function DashboardHero({ dict, onSubmit }: HeroProps) {
                 <Globe className="h-4 w-4" />
               </button>
               <span className="text-xs text-muted-foreground/50 ml-1">
-                Claude 3.5 Sonnet
+                AI Agent
               </span>
             </div>
             <button

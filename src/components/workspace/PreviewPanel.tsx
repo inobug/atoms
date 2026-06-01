@@ -2,23 +2,25 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Monitor, Smartphone, Tablet, RefreshCw } from "lucide-react";
 import {
-  Monitor,
-  Smartphone,
-  Tablet,
-  RefreshCw,
-  Maximize2,
-} from "lucide-react";
-
-interface PreviewPanelProps {
-  code: string;
-}
+  SandpackPreview as SandpackPreviewComponent,
+  useSandpack,
+} from "@codesandbox/sandpack-react";
 
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
-export function PreviewPanel({ code }: PreviewPanelProps) {
+interface PreviewPanelProps {
+  isGenerating: boolean;
+  hasGeneratedFiles: boolean;
+}
+
+export function PreviewPanel({
+  isGenerating,
+  hasGeneratedFiles,
+}: PreviewPanelProps) {
   const [device, setDevice] = useState<DeviceMode>("desktop");
-  const [refreshKey, setRefreshKey] = useState(0);
+  const { sandpack } = useSandpack();
 
   const deviceWidths: Record<DeviceMode, string> = {
     desktop: "100%",
@@ -27,17 +29,12 @@ export function PreviewPanel({ code }: PreviewPanelProps) {
   };
 
   function handleRefresh() {
-    setRefreshKey((k) => k + 1);
+    sandpack.runSandpack();
   }
 
-  function handleFullscreen() {
-    const iframe = document.getElementById(
-      "preview-iframe",
-    ) as HTMLIFrameElement;
-    if (iframe) {
-      iframe.requestFullscreen?.();
-    }
-  }
+  // Show preview as soon as files are available, even during generation
+  // Only show placeholder when no files have been generated yet
+  const showPreview = hasGeneratedFiles;
 
   return (
     <div className="flex-1 flex flex-col min-w-0">
@@ -70,51 +67,150 @@ export function PreviewPanel({ code }: PreviewPanelProps) {
             <Smartphone className="h-3 w-3" />
           </Button>
         </div>
-        <div className="ml-auto flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={handleRefresh}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={handleFullscreen}
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        {showPreview && (
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleRefresh}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Preview area */}
-      <div className="flex-1 bg-zinc-900 flex items-center justify-center p-4 overflow-hidden">
-        {code ? (
+      <div className="flex-1 bg-[#0a0a0f] flex items-center justify-center overflow-hidden relative">
+        {showPreview ? (
           <div
-            className="h-full bg-white rounded-lg overflow-hidden shadow-2xl transition-all duration-300"
+            className="h-full bg-white overflow-hidden transition-all duration-300"
             style={{ width: deviceWidths[device], maxWidth: "100%" }}
           >
-            <iframe
-              id="preview-iframe"
-              key={refreshKey}
-              srcDoc={code}
-              className="w-full h-full border-0"
-              sandbox="allow-scripts allow-forms allow-modals allow-popups"
-              title="App Preview"
+            <SandpackPreviewComponent
+              showOpenInCodeSandbox={false}
+              showRefreshButton={false}
+              style={{ height: "100%", width: "100%" }}
             />
           </div>
         ) : (
-          <div className="text-center text-muted-foreground">
-            <Monitor className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">No preview yet</p>
-            <p className="text-xs mt-1">
-              Send a message to generate your application
-            </p>
-          </div>
+          <PreviewPlaceholder isGenerating={isGenerating} />
         )}
+      </div>
+    </div>
+  );
+}
+
+function PreviewPlaceholder({ isGenerating }: { isGenerating: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-6 select-none">
+      {/* Animated orb */}
+      <div className="relative w-32 h-32">
+        {/* Outer ring */}
+        <div
+          className={`absolute inset-0 rounded-full border border-violet-500/20 ${isGenerating ? "animate-spin" : ""}`}
+          style={{ animationDuration: "8s" }}
+        />
+        {/* Middle ring */}
+        <div
+          className={`absolute inset-3 rounded-full border border-blue-500/30 ${isGenerating ? "animate-spin" : ""}`}
+          style={{ animationDuration: "6s", animationDirection: "reverse" }}
+        />
+        {/* Inner ring */}
+        <div
+          className={`absolute inset-6 rounded-full border border-cyan-500/20 ${isGenerating ? "animate-spin" : ""}`}
+          style={{ animationDuration: "4s" }}
+        />
+        {/* Core glow */}
+        <div className="absolute inset-9 rounded-full bg-gradient-to-br from-violet-500/30 to-blue-500/30 blur-sm" />
+        <div className="absolute inset-10 rounded-full bg-gradient-to-br from-violet-600/50 to-blue-600/50" />
+
+        {/* Orbiting dots */}
+        {isGenerating && (
+          <>
+            <div
+              className="absolute w-2 h-2 rounded-full bg-violet-400 animate-spin"
+              style={{
+                top: "0",
+                left: "50%",
+                marginLeft: "-4px",
+                animationDuration: "3s",
+                transformOrigin: "4px 64px",
+                boxShadow: "0 0 8px 2px rgba(167,139,250,0.4)",
+              }}
+            />
+            <div
+              className="absolute w-1.5 h-1.5 rounded-full bg-blue-400 animate-spin"
+              style={{
+                top: "50%",
+                right: "0",
+                marginTop: "-3px",
+                animationDuration: "4s",
+                transformOrigin: "-60px 3px",
+                boxShadow: "0 0 8px 2px rgba(96,165,250,0.4)",
+              }}
+            />
+            <div
+              className="absolute w-1 h-1 rounded-full bg-cyan-400 animate-spin"
+              style={{
+                bottom: "0",
+                left: "50%",
+                marginLeft: "-2px",
+                animationDuration: "5s",
+                transformOrigin: "2px -60px",
+                boxShadow: "0 0 6px 2px rgba(34,211,238,0.3)",
+              }}
+            />
+          </>
+        )}
+
+        {/* Pulse effect when generating */}
+        {isGenerating && (
+          <div
+            className="absolute inset-6 rounded-full bg-violet-500/10 animate-ping"
+            style={{ animationDuration: "2s" }}
+          />
+        )}
+      </div>
+
+      {/* Status text */}
+      <div className="text-center space-y-2">
+        {isGenerating ? (
+          <>
+            <div className="flex items-center gap-2 text-sm text-violet-300/90">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500" />
+              </span>
+              Building your project...
+            </div>
+            <p className="text-xs text-muted-foreground/50">
+              Agents are generating code. Preview will appear shortly.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground/70">Ready to build</p>
+            <p className="text-xs text-muted-foreground/40">
+              Describe your project in the chat to get started
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* Animated grid lines */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-[0.03]">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(139,92,246,0.3) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(139,92,246,0.3) 1px, transparent 1px)
+            `,
+            backgroundSize: "60px 60px",
+          }}
+        />
       </div>
     </div>
   );

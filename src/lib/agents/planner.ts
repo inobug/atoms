@@ -1,16 +1,17 @@
 import { streamClaude } from "@/lib/ai/claude";
 import { streamOpenAI } from "@/lib/ai/openai";
 import { PLANNER_SYSTEM_PROMPT, buildPlannerPrompt } from "./prompts";
+import type { SandpackFiles } from "@/types";
 
 export async function* runPlanner(opts: {
   userRequest: string;
-  currentCode: string | null;
+  currentFiles: SandpackFiles | null;
   history: Array<{ role: string; content: string }>;
   provider: "claude" | "openai";
 }): AsyncGenerator<string> {
   const userMessage = buildPlannerPrompt(
     opts.userRequest,
-    opts.currentCode,
+    opts.currentFiles,
     opts.history,
   );
 

@@ -1,8 +1,14 @@
 import { NextRequest } from "next/server";
 import { runPlanner } from "@/lib/agents/planner";
 import { runCoder } from "@/lib/agents/coder";
-import { runReviewer } from "@/lib/agents/reviewer";
+import { runReviewer, parseReviewerVerdict } from "@/lib/agents/reviewer";
+import {
+  parseMultiFileOutput,
+  toSandpackFiles,
+  validateFileCompleteness,
+} from "@/lib/parser";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import type { SandpackFiles } from "@/types";
 
 let _supabaseAdmin: SupabaseClient | null = null;
 function getSupabaseAdmin() {
@@ -19,11 +25,29 @@ function getSupabaseAdmin() {
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+const MAX_RETRIES = 2;
+
 export async function POST(req: NextRequest) {
-  const { projectId, prompt, modelProvider, currentCode, history } =
-    await req.json();
+  const body = await req.json();
+  const {
+    projectId,
+    prompt,
+    modelProvider,
+    currentFiles,
+    history,
+    skipPlanner,
+    plan: providedPlan,
+  } = body;
+
+  if (!projectId || !prompt) {
+    return new Response(
+      JSON.stringify({ error: "Missing required fields: projectId, prompt" }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   const encoder = new TextEncoder();
+  const provider = modelProvider || "claude";
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -33,81 +57,187 @@ export async function POST(req: NextRequest) {
 
       try {
         // --- Phase 1: Planner ---
-        send({ agent: "planner" });
-        let planContent = "";
+        let planContent = providedPlan || "";
 
-        for await (const chunk of runPlanner({
-          userRequest: prompt,
-          currentCode,
-          history: history || [],
-          provider: modelProvider || "claude",
-        })) {
-          planContent += chunk;
-          send({ content: chunk });
+        if (!skipPlanner) {
+          send({ agent: "planner" });
+
+          try {
+            for await (const chunk of runPlanner({
+              userRequest: prompt,
+              currentFiles: currentFiles || null,
+              history: history || [],
+              provider,
+            })) {
+              planContent += chunk;
+              send({ content: chunk });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Planner failed";
+            send({ content: `\n\n[Error: ${msg}]` });
+            planContent = prompt;
+          }
+
+          // Save plan to project
+          send({ plan: planContent });
+          await getSupabaseAdmin()
+            .from("projects")
+            .update({ plan: planContent })
+            .eq("id", projectId);
         }
 
-        // --- Phase 2: Coder ---
-        send({ agent: "coder" });
-        let codeContent = "";
+        // --- Phase 2: Coder (with retry loop) ---
+        let sandpackFiles: SandpackFiles = {};
+        let retryCount = 0;
+        let reviewerFeedback: string | undefined;
+        let lastVerdict: { verdict: string; issues: string[] } | null = null;
+        let autoCheckIssues: string[] = [];
 
-        for await (const chunk of runCoder({
-          plan: planContent,
-          userRequest: prompt,
-          currentCode,
-          provider: modelProvider || "claude",
-        })) {
-          codeContent += chunk;
-          send({ content: chunk });
+        while (retryCount <= MAX_RETRIES) {
+          send({
+            agent: "coder",
+            ...(retryCount > 0 ? { retry: retryCount } : {}),
+          });
+          let coderRaw = "";
+
+          try {
+            for await (const chunk of runCoder({
+              plan: planContent,
+              userRequest: prompt,
+              currentFiles: currentFiles || null,
+              provider,
+              reviewerFeedback,
+            })) {
+              coderRaw += chunk;
+              send({ content: chunk });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Coder failed";
+            send({ content: `\n\n[Error: ${msg}]` });
+            send({ error: msg });
+            controller.close();
+            return;
+          }
+
+          // Parse multi-file output
+          const parsedFiles = parseMultiFileOutput(coderRaw);
+          sandpackFiles = toSandpackFiles(parsedFiles);
+
+          // Send files for preview
+          send({ files: sandpackFiles });
+
+          // Quick completeness check before reviewer
+          const { missing, truncated } =
+            validateFileCompleteness(sandpackFiles);
+          autoCheckIssues = [
+            ...missing.map((m) => `缺失文件: ${m}`),
+            ...truncated.map((t) => `文件不完整: ${t}`),
+          ];
+          if (
+            (missing.length > 0 || truncated.length > 0) &&
+            retryCount < MAX_RETRIES
+          ) {
+            const issues: string[] = [];
+            if (missing.length > 0) {
+              issues.push(
+                `App.jsx imports these files but they don't exist: ${missing.join(", ")}. You MUST either generate these files or remove the imports and inline the components.`,
+              );
+            }
+            if (truncated.length > 0) {
+              issues.push(
+                `These files are truncated/incomplete: ${truncated.join(", ")}. Regenerate them completely. If there are too many files, consolidate components into fewer files.`,
+              );
+            }
+            send({
+              agent: "reviewer",
+            });
+            send({
+              content: `Auto-check found issues:\n- ${issues.join("\n- ")}\n\nRetrying with fixes...`,
+            });
+            reviewerFeedback = issues.join("\n");
+            retryCount++;
+            continue;
+          }
+
+          // --- Phase 3: Reviewer ---
+          send({ agent: "reviewer" });
+          let reviewContent = "";
+
+          try {
+            for await (const chunk of runReviewer({
+              userRequest: prompt,
+              files: sandpackFiles,
+              provider,
+            })) {
+              reviewContent += chunk;
+              send({ content: chunk });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Reviewer failed";
+            send({ content: `\n\n[Error: ${msg}]` });
+            break; // Don't retry on reviewer failure
+          }
+
+          // Parse verdict
+          const verdict = parseReviewerVerdict(reviewContent);
+          lastVerdict = verdict;
+          send({ verdict });
+
+          if (verdict.verdict === "pass" || retryCount >= MAX_RETRIES) {
+            break;
+          }
+
+          // Retry: feed reviewer issues back to coder
+          reviewerFeedback = verdict.issues.join("\n");
+          retryCount++;
         }
 
-        // Extract HTML code from the coder output
-        const finalCode = extractHtml(codeContent);
+        // --- Save results ---
+        const generationId = crypto.randomUUID();
 
-        // Send the code for preview
-        send({ code: finalCode });
-
-        // Save generated file
-        const filename = "index.html";
-        const { data: existingFiles } = await getSupabaseAdmin()
-          .from("generated_files")
-          .select("version")
-          .eq("project_id", projectId)
-          .eq("filename", filename)
-          .order("version", { ascending: false })
-          .limit(1);
-
-        const nextVersion = existingFiles?.[0]
-          ? existingFiles[0].version + 1
-          : 1;
-
-        const { data: newFile } = await getSupabaseAdmin()
-          .from("generated_files")
-          .insert({
+        // Save all files to generated_files
+        const fileRows = Object.entries(sandpackFiles).map(
+          ([path, { code }]) => ({
             project_id: projectId,
-            filename,
-            content: finalCode,
-            version: nextVersion,
-            language: "html",
+            filename: path,
+            content: code,
+            language: path.split(".").pop() || "text",
+            generation_id: generationId,
+            version: 1,
+          }),
+        );
+
+        if (fileRows.length > 0) {
+          await getSupabaseAdmin().from("generated_files").insert(fileRows);
+        }
+
+        // Update project with current files
+        await getSupabaseAdmin()
+          .from("projects")
+          .update({
+            current_files: sandpackFiles,
+            updated_at: new Date().toISOString(),
           })
-          .select()
-          .single();
+          .eq("id", projectId);
 
-        if (newFile) {
-          send({ files: [newFile] });
-        }
+        // Send structured summary
+        const fileList = Object.keys(sandpackFiles);
+        send({
+          summary: {
+            fileCount: fileList.length,
+            files: fileList,
+            retries: retryCount,
+            verdict: lastVerdict?.verdict || "unknown",
+            issues:
+              lastVerdict?.issues && lastVerdict.issues.length > 0
+                ? lastVerdict.issues
+                : autoCheckIssues.length > 0
+                  ? autoCheckIssues
+                  : [],
+          },
+        });
 
-        // --- Phase 3: Reviewer ---
-        send({ agent: "reviewer" });
-
-        for await (const chunk of runReviewer({
-          userRequest: prompt,
-          code: finalCode,
-          provider: modelProvider || "claude",
-        })) {
-          send({ content: chunk });
-        }
-
-        send({ done: true });
+        send({ done: true, generationId });
       } catch (error) {
         console.error("Generation error:", error);
         send({
@@ -126,35 +256,4 @@ export async function POST(req: NextRequest) {
       Connection: "keep-alive",
     },
   });
-}
-
-function extractHtml(content: string): string {
-  // If the content is wrapped in markdown code fences, extract it
-  const fenceMatch = content.match(/```(?:html)?\s*\n([\s\S]*?)\n```/);
-  if (fenceMatch) {
-    return fenceMatch[1].trim();
-  }
-
-  // If the content starts with <!DOCTYPE or <html, use it directly
-  const trimmed = content.trim();
-  if (
-    trimmed.startsWith("<!DOCTYPE") ||
-    trimmed.startsWith("<!doctype") ||
-    trimmed.startsWith("<html")
-  ) {
-    return trimmed;
-  }
-
-  // Fallback: wrap in basic HTML structure
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Generated App</title>
-</head>
-<body>
-${trimmed}
-</body>
-</html>`;
 }

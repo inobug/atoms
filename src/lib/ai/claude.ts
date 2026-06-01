@@ -14,12 +14,13 @@ function getClient() {
 export async function* streamClaude(
   systemPrompt: string,
   userMessage: string,
+  maxTokens?: number,
 ): AsyncGenerator<string> {
   const model = process.env.CLAUDE_MODEL || "claude-4.6";
 
   const stream = await getClient().chat.completions.create({
     model,
-    max_tokens: 8192,
+    max_tokens: maxTokens || 16384,
     stream: true,
     messages: [
       { role: "system", content: systemPrompt },

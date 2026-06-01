@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import { createServerClient } from "@supabase/ssr";
 
 const locales = ["zh", "en"];
 const defaultLocale = "zh";
@@ -34,17 +34,49 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(request.nextUrl);
   }
 
-  // Extract locale from path for auth redirect
-  const locale = pathname.split("/")[1];
+  // Refresh session for all requests
+  let supabaseResponse = NextResponse.next({ request });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value),
+          );
+          supabaseResponse = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options),
+          );
+        },
+      },
+    },
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   // Protect dashboard and project routes
+  const locale = pathname.split("/")[1];
   const pathWithoutLocale = pathname.replace(`/${locale}`, "");
+
   if (
-    pathWithoutLocale.startsWith("/dashboard") ||
-    pathWithoutLocale.startsWith("/project")
+    !user &&
+    (pathWithoutLocale.startsWith("/dashboard") ||
+      pathWithoutLocale.startsWith("/project"))
   ) {
-    return await updateSession(request, locale);
+    const url = request.nextUrl.clone();
+    url.pathname = `/${locale}/login`;
+    return NextResponse.redirect(url);
   }
+
+  return supabaseResponse;
 }
 
 export const config = {

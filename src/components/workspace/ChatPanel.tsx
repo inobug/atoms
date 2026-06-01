@@ -7,15 +7,28 @@ import {
   Send,
   Loader2,
   Brain,
-  Code,
-  Search,
   Layout,
   ListTodo,
   BarChart3,
   ShoppingCart,
   Sparkles,
 } from "lucide-react";
-import type { Message } from "@/types";
+import type { Message, ChatOption } from "@/types";
+import { OptionsForm } from "./OptionsForm";
+
+/** Lightweight markdown: bold, inline code, blockquotes. No external deps. */
+function simpleMarkdown(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(
+      /^&gt; (.+)$/gm,
+      '<span class="text-muted-foreground italic">$1</span>',
+    );
+}
 
 interface ChatPanelProps {
   messages: Message[];
@@ -26,9 +39,6 @@ interface ChatPanelProps {
 const agentConfig = {
   user: { label: "You", icon: null, color: "bg-primary" },
   assistant: { label: "Assistant", icon: Sparkles, color: "bg-primary" },
-  planner: { label: "Planner", icon: Brain, color: "bg-violet-600" },
-  coder: { label: "Coder", icon: Code, color: "bg-blue-600" },
-  reviewer: { label: "Reviewer", icon: Search, color: "bg-emerald-600" },
   system: { label: "System", icon: null, color: "bg-muted" },
 };
 
@@ -115,7 +125,12 @@ export function ChatPanel({
             </div>
           )}
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              onSendMessage={onSendMessage}
+              isGenerating={isGenerating}
+            />
           ))}
           {isGenerating && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -152,13 +167,22 @@ export function ChatPanel({
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({
+  message,
+  onSendMessage,
+  isGenerating,
+}: {
+  message: Message;
+  onSendMessage: (content: string) => void;
+  isGenerating: boolean;
+}) {
   const config =
     agentConfig[message.role as keyof typeof agentConfig] || agentConfig.system;
   const isUser = message.role === "user";
   const Icon = config.icon;
+  const options = message.metadata?.options as ChatOption[] | undefined;
 
-  if (!message.content && !isUser) {
+  if (!message.content && !options && !isUser) {
     return null;
   }
 
@@ -184,7 +208,21 @@ function MessageBubble({ message }: { message: Message }) {
               : "bg-muted text-foreground"
           }`}
         >
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          {message.content && (
+            <div
+              className="whitespace-pre-wrap break-words [&_strong]:font-semibold [&_code]:bg-background/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
+              dangerouslySetInnerHTML={{
+                __html: simpleMarkdown(message.content),
+              }}
+            />
+          )}
+          {options && options.length > 0 && (
+            <OptionsForm
+              options={options}
+              onSubmit={onSendMessage}
+              disabled={isGenerating}
+            />
+          )}
         </div>
       </div>
     </div>
