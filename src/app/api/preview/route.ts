@@ -25,6 +25,13 @@ export async function POST(req: NextRequest) {
   }
 }
 
+interface TranspileResult {
+  path: string;
+  code: string;
+  ok: boolean;
+  error?: string;
+}
+
 function buildPreviewHtml(files: SandpackFiles): string {
   const entries = Object.entries(files).map(([path, file]) => ({
     path,
@@ -49,15 +56,31 @@ function buildPreviewHtml(files: SandpackFiles): string {
     return b.path.split("/").length - a.path.split("/").length;
   });
 
-  // Strip module syntax and transpile JSX → JS
-  const jsBlocks: string[] = [];
-  for (const { path, code } of jsFiles) {
-    const stripped = stripModuleSyntax(code);
-    const transpiled = transpileJsx(stripped, path);
-    jsBlocks.push(`\n// --- ${path} ---\n${transpiled}`);
-  }
+  // Strip module syntax and transpile JSX → JS (per-file, fault-tolerant)
+  const results: TranspileResult[] = jsFiles.map(({ path, code }) => {
+    // Check for obvious truncation
+    const truncated = isLikelyTruncated(code);
+    if (truncated) {
+      return {
+        path,
+        code: "",
+        ok: false,
+        error: `File truncated (incomplete code)`,
+      };
+    }
 
-  const jsCode = jsBlocks.join("\n");
+    const stripped = stripModuleSyntax(code);
+    const { code: transpiled, error } = transpileJsx(stripped, path);
+    return { path, code: transpiled, ok: !error, error };
+  });
+
+  const successBlocks = results
+    .filter((r) => r.ok)
+    .map((r) => `\n// --- ${r.path} ---\n${r.code}`)
+    .join("\n");
+
+  const failedFiles = results.filter((r) => !r.ok);
+
   const cssCode = cssFiles.map((e) => e.code).join("\n");
 
   // Detect Tailwind usage
@@ -66,6 +89,15 @@ function buildPreviewHtml(files: SandpackFiles): string {
     /className=["'][^"']*(?:flex|grid|bg-|text-|p-|m-|w-|h-|rounded|shadow|border|gap-|items-|justify-)/.test(
       allCode,
     );
+
+  // Build error banner HTML if some files failed
+  const errorBanner =
+    failedFiles.length > 0
+      ? `<div id="__errors" style="position:fixed;top:0;left:0;right:0;background:#fef2f2;border-bottom:2px solid #ef4444;padding:8px 12px;font-family:system-ui;font-size:12px;color:#991b1b;z-index:9999;">
+<strong>${failedFiles.length} file(s) skipped due to errors:</strong>
+<ul style="margin:4px 0 0 16px;">${failedFiles.map((f) => `<li><code>${f.path}</code> — ${f.error}</li>`).join("")}</ul>
+</div>`
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -81,25 +113,52 @@ ${cssCode}
 </style>
 </head>
 <body>
+${errorBanner}
 <div id="root"></div>
 <script>
 (function() {
-${jsCode}
+  // Stub for missing components (skipped due to errors)
+  function __stub(name) {
+    return function() {
+      return React.createElement('div', {
+        style: {padding:'12px',margin:'8px',background:'#fef9c3',border:'1px solid #eab308',borderRadius:'4px',fontSize:'13px',color:'#854d0e'}
+      }, '⚠ Component "' + name + '" failed to compile');
+    };
+  }
+${failedFiles
+  .map((f) => {
+    const name = extractComponentName(f.path);
+    return name ? `  var ${name} = __stub("${name}");` : "";
+  })
+  .filter(Boolean)
+  .join("\n")}
 
-// --- Render ---
-if (typeof App !== 'undefined') {
-  var root = ReactDOM.createRoot(document.getElementById('root'));
-  root.render(React.createElement(App));
-} else {
-  document.getElementById('root').innerHTML = '<p style="padding:20px;color:#888;">No App component found.</p>';
-}
+  try {
+${successBlocks}
+
+    // --- Render ---
+    if (typeof App !== 'undefined') {
+      var root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(React.createElement(App));
+    } else {
+      document.getElementById('root').innerHTML = '<p style="padding:20px;color:#888;">No App component found.</p>';
+    }
+  } catch(e) {
+    document.getElementById('root').innerHTML =
+      '<div style="padding:20px;font-family:monospace;color:#dc2626;"><h3>Runtime Error</h3><pre style="margin-top:8px;white-space:pre-wrap;">' +
+      (e.message || e) + '</pre></div>';
+    console.error(e);
+  }
 })();
 </script>
 </body>
 </html>`;
 }
 
-function transpileJsx(code: string, filename: string): string {
+function transpileJsx(
+  code: string,
+  filename: string,
+): { code: string; error?: string } {
   try {
     const result = transformSync(code, {
       filename,
@@ -108,11 +167,37 @@ function transpileJsx(code: string, filename: string): string {
       ast: false,
       sourceMaps: false,
     });
-    return result?.code || code;
-  } catch {
-    // If transpilation fails, return original (might work if it's plain JS)
-    return code;
+    return { code: result?.code || code };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Transpile error";
+    return { code: "", error: msg };
   }
+}
+
+/**
+ * Detect if file content is likely truncated:
+ * - Unbalanced braces/parens
+ * - Ends abruptly mid-expression
+ */
+function isLikelyTruncated(code: string): boolean {
+  let braces = 0;
+  let parens = 0;
+  for (const ch of code) {
+    if (ch === "{") braces++;
+    else if (ch === "}") braces--;
+    else if (ch === "(") parens++;
+    else if (ch === ")") parens--;
+  }
+  // If more than 2 unclosed, likely truncated
+  if (braces > 2 || parens > 2) return true;
+  // Ends with obviously incomplete patterns
+  if (/[{(,]\s*$/.test(code.trimEnd())) return true;
+  return false;
+}
+
+function extractComponentName(path: string): string | null {
+  const match = path.match(/\/([A-Z][A-Za-z0-9]*)\.(?:jsx?|tsx?)$/);
+  return match ? match[1] : null;
 }
 
 function stripModuleSyntax(code: string): string {
