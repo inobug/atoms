@@ -306,8 +306,8 @@ ${successBlocks}
 
     // --- Render ---
     if (typeof App !== 'undefined') {
-      var root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(React.createElement(App));
+      var __reactRoot = ReactDOM.createRoot(document.getElementById('root'));
+      __reactRoot.render(React.createElement(App));
     } else {
       document.getElementById('root').innerHTML = '<p style="padding:20px;color:#888;">No App component found.</p>';
     }
