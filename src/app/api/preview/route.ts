@@ -40,7 +40,9 @@ function buildPreviewHtml(files: SandpackFiles): string {
 
   // Separate CSS and JS/JSX files (only transpile actual code files)
   const cssFiles = entries.filter((e) => e.path.endsWith(".css"));
-  const jsFiles = entries.filter((e) => /\.[jt]sx?$/.test(e.path));
+  const jsFiles = entries.filter(
+    (e) => /\.[jt]sx?$/.test(e.path) && !isReactEntryFile(e.path),
+  );
 
   // Sort: deeper paths first (components), App.* last
   jsFiles.sort((a, b) => {
@@ -384,6 +386,10 @@ function isLikelyTruncated(code: string): boolean {
 function extractComponentName(path: string): string | null {
   const match = path.match(/\/([A-Z][A-Za-z0-9]*)\.(?:jsx?|tsx?)$/);
   return match ? match[1] : null;
+}
+
+function isReactEntryFile(path: string): boolean {
+  return /\/(?:index|main)\.[jt]sx?$/.test(path);
 }
 
 function stripModuleSyntax(code: string): string {
