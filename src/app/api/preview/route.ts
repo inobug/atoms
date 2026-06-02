@@ -102,7 +102,9 @@ function buildPreviewHtml(files: SandpackFiles): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-${usesTailwind ? '<script src="https://cdn.tailwindcss.com"></script>' : ""}
+<script crossorigin src="/libs/react.min.js"></script>
+<script crossorigin src="/libs/react-dom.min.js"></script>
+${usesTailwind ? '<script crossorigin src="/libs/tailwind.js"></script>' : ""}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ${cssCode}
@@ -111,7 +113,7 @@ ${cssCode}
 <body>
 ${errorBanner}
 <div id="root"></div>
-<script type="module">
+<script>
 function showPreviewError(title, message) {
   var root = document.getElementById('root');
   if (!root) return;
@@ -121,15 +123,15 @@ function showPreviewError(title, message) {
     message + '</pre></div>';
 }
 
-Promise.all([
-  import("https://esm.sh/react@19.2.4"),
-  import("https://esm.sh/react-dom@19.2.4/client")
-]).then(function(mods) {
-  var React = mods[0].default || mods[0];
-  var createRoot = mods[1].createRoot;
-
 (function() {
-  var ReactDOM = { createRoot: createRoot };
+  var React = window.React;
+  var ReactDOM = window.ReactDOM;
+  var createRoot = ReactDOM && ReactDOM.createRoot;
+
+  if (!React || !createRoot) {
+    showPreviewError('Preview Runtime Error', 'React runtime failed to load from /libs/.');
+    return;
+  }
 
   // --- React hooks destructuring ---
   var useState = React.useState;
@@ -337,9 +339,6 @@ ${successBlocks}
     console.error(e);
   }
 })()
-}).catch(function(error) {
-  showPreviewError('Preview Runtime Error', error && error.message ? error.message : String(error));
-});
 </script>
 </body>
 </html>`;
