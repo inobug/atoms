@@ -294,6 +294,8 @@ function showPreviewError(title, message) {
   var UserPlus = __icon('UserPlus');
   var LogIn = __icon('LogIn');
   var LogOut = __icon('LogOut');
+  var Headphones = __icon('Headphones');
+  var HeadphonesIcon = Headphones;
 
   // --- recharts stubs: render children or placeholder ---
   function __chartContainer(props) {
