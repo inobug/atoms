@@ -296,6 +296,16 @@ function showPreviewError(title, message) {
   var LogOut = __icon('LogOut');
   var Headphones = __icon('Headphones');
   var HeadphonesIcon = Headphones;
+  var CheckCircle = __icon('CheckCircle');
+  var CheckCircleIcon = CheckCircle;
+  var XCircle = __icon('XCircle');
+  var XCircleIcon = XCircle;
+  var AlertTriangle = __icon('AlertTriangle');
+  var AlertTriangleIcon = AlertTriangle;
+  var CircleCheck = CheckCircle;
+  var CircleCheckIcon = CheckCircle;
+  var CircleX = XCircle;
+  var CircleXIcon = XCircle;
 
   // --- recharts stubs: render children or placeholder ---
   function __chartContainer(props) {
