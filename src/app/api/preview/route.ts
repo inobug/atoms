@@ -66,7 +66,10 @@ function buildPreviewHtml(files: SandpackFiles): string {
 
     const stripped = stripModuleSyntax(code);
     const { code: transpiled, error } = transpileJsx(stripped, path);
-    return { path, code: transpiled, ok: !error, error };
+    // Replace const/let with var to avoid duplicate declaration errors
+    // when multiple files are concatenated in the same scope
+    const safeCode = transpiled.replace(/\b(const|let)\s+/g, "var ");
+    return { path, code: safeCode, ok: !error, error };
   });
 
   const successBlocks = results
@@ -378,6 +381,13 @@ function stripModuleSyntax(code: string): string {
       .replace(/import\s+\w+\s+from\s*['"][^'"]+['"];?/g, "")
       // Remove side-effect imports: import '...'
       .replace(/import\s+['"][^'"]+['"];?/g, "")
+      // Remove ReactDOM.createRoot / ReactDOM.render entry-point code
+      .replace(
+        /(?:const|let|var)\s+\w+\s*=\s*ReactDOM\.createRoot\([^)]*\);?/g,
+        "",
+      )
+      .replace(/ReactDOM\.createRoot\([^)]*\)\.render\([^)]*\);?/g, "")
+      .replace(/ReactDOM\.render\([^)]*,[^)]*\);?/g, "")
       // export default function Name → function Name
       .replace(/export\s+default\s+function\s+/g, "function ")
       // export default class Name → class Name
