@@ -170,23 +170,20 @@ function transpileJsx(
 }
 
 /**
- * Detect if file content is likely truncated:
- * - Unbalanced braces/parens
- * - Ends abruptly mid-expression
+ * Detect if file content is likely truncated.
+ * Only checks for obvious signs — brace counting is unreliable for JSX
+ * because inline styles like style={{...}} create nested brace patterns.
  */
 function isLikelyTruncated(code: string): boolean {
-  let braces = 0;
-  let parens = 0;
-  for (const ch of code) {
-    if (ch === "{") braces++;
-    else if (ch === "}") braces--;
-    else if (ch === "(") parens++;
-    else if (ch === ")") parens--;
-  }
-  // If more than 2 unclosed, likely truncated
-  if (braces > 2 || parens > 2) return true;
-  // Ends with obviously incomplete patterns
-  if (/[{(,]\s*$/.test(code.trimEnd())) return true;
+  const trimmed = code.trimEnd();
+  // Ends with obviously incomplete patterns (mid-expression)
+  if (/[{(,]\s*$/.test(trimmed)) return true;
+  // Ends mid-string (unclosed quote on last line)
+  const lastLine = trimmed.split("\n").pop() || "";
+  if (/['"`][^'"`]*$/.test(lastLine) && !/\/\//.test(lastLine)) return true;
+  // Very short file that looks like it started but never finished
+  if (trimmed.length < 20 && /^(import|export|function|const)\s/.test(trimmed))
+    return true;
   return false;
 }
 
