@@ -38,14 +38,9 @@ function buildPreviewHtml(files: SandpackFiles): string {
     code: typeof file === "string" ? (file as string) : file.code,
   }));
 
-  // Separate CSS and JS/JSX files
+  // Separate CSS and JS/JSX files (only transpile actual code files)
   const cssFiles = entries.filter((e) => e.path.endsWith(".css"));
-  const jsFiles = entries.filter(
-    (e) =>
-      !e.path.endsWith(".css") &&
-      !e.path.endsWith(".json") &&
-      !e.path.endsWith(".md"),
-  );
+  const jsFiles = entries.filter((e) => /\.[jt]sx?$/.test(e.path));
 
   // Sort: deeper paths first (components), App.* last
   jsFiles.sort((a, b) => {
