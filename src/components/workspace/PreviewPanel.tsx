@@ -38,21 +38,19 @@ export function PreviewPanel({
     mobile: "375px",
   };
 
-  // Track if Sandpack ever successfully connects
+  // Track if Sandpack bundler ACTUALLY connects (not just "idle" init state)
+  // Only trust bundlerState being populated as proof of real connection
   useEffect(() => {
-    if (
-      (sandpack.status === "idle" || sandpack.status === "running") &&
-      !sandpack.error
-    ) {
+    if (sandpack.bundlerState && !sandpack.error) {
       sandpackOkRef.current = true;
       setUseFallback(false);
     }
     if (sandpack.status === "timeout") {
       setUseFallback(true);
     }
-  }, [sandpack.status, sandpack.error]);
+  }, [sandpack.bundlerState, sandpack.status, sandpack.error]);
 
-  // Timer-based fallback — NOT affected by status changes
+  // Timer-based fallback — fires unconditionally after timeout
   useEffect(() => {
     if (!hasGeneratedFiles) return;
     sandpackOkRef.current = false;
