@@ -135,6 +135,24 @@ function showPreviewError(title, message) {
     return;
   }
 
+  var __rawCreateElement = React.createElement;
+  function __safeReactChild(child) {
+    if (Array.isArray(child)) {
+      return child.map(__safeReactChild).filter(function(item) { return item !== undefined; });
+    }
+    if (child && typeof child === 'object' && !React.isValidElement(child)) {
+      return null;
+    }
+    return child;
+  }
+  React.createElement = function(type, props) {
+    var args = [type, props];
+    for (var i = 2; i < arguments.length; i++) {
+      args.push(__safeReactChild(arguments[i]));
+    }
+    return __rawCreateElement.apply(React, args);
+  };
+
   // --- React hooks destructuring ---
   var useState = React.useState;
   var useEffect = React.useEffect;
