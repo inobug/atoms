@@ -43,10 +43,10 @@ export function PreviewPanel({
   useEffect(() => {
     if (sandpack.bundlerState && !sandpack.error) {
       sandpackOkRef.current = true;
-      setUseFallback(false);
+      queueMicrotask(() => setUseFallback(false));
     }
     if (sandpack.status === "timeout") {
-      setUseFallback(true);
+      queueMicrotask(() => setUseFallback(true));
     }
   }, [sandpack.bundlerState, sandpack.status, sandpack.error]);
 
@@ -62,12 +62,13 @@ export function PreviewPanel({
     }, FALLBACK_TIMEOUT_MS);
 
     return () => clearTimeout(timer);
-  }, [hasGeneratedFiles]);
+  }, [hasGeneratedFiles, files]);
 
   // Fetch server-compiled HTML when fallback activates
   const fetchFallbackHtml = useCallback(async () => {
     if (Object.keys(files).length === 0) return;
     setFallbackLoading(true);
+    setFallbackHtml("");
     try {
       const res = await fetch("/api/preview", {
         method: "POST",
@@ -93,7 +94,9 @@ export function PreviewPanel({
 
   useEffect(() => {
     if (useFallback) {
-      fetchFallbackHtml();
+      queueMicrotask(() => {
+        fetchFallbackHtml();
+      });
     }
   }, [useFallback, fetchFallbackHtml]);
 
